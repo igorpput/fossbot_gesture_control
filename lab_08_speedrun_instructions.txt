@@ -1,0 +1,236 @@
+================================================================================
+LAB 08: GESTURE-BASED STEERING — SPEEDRUN GUIDE (UBUNTU + NVIDIA GPU)
+================================================================================
+Repo: https://github.com/igorpput/fossbot_gesture_control.git
+Goal: Finish in ~30-45 minutes with zero code writing in the lab.
+
+IMPORTANT RULE:
+The Docker command uses "--rm". Closing Terminal 1 wipes mediapipe and
+~/hand_landmarker.task (your cloned code in ws_fossbot stays on the host).
+DO NOT close Terminal 1 until you finish BOTH the simulator AND the real robot!
+
+
+================================================================================
+PHASE 1: START CONTAINER (~2 min)
+================================================================================
+Open TERMINAL 1 on the Ubuntu host.
+
+1.1) Check webcam device and verify the Docker image exists:
+
+ls /dev/video*
+docker images | grep ros2_fossbot_edu
+
+  * Note the lowest video number (almost always /dev/video0).
+  * If "ros2_fossbot_edu" is MISSING, build it first (takes 15-25 min):
+      git clone https://github.com/LRMPUT/FOSSBotEduSim.git
+      cd FOSSBotEduSim
+      bash build_image.sh
+  * If it ALREADY exists, cd into the FOSSBotEduSim folder:
+      cd ~/FOSSBotEduSim
+
+1.2) Start the container with display, NVIDIA GPU, and webcam access
+     (Run from inside the FOSSBotEduSim directory):
+
+xhost +SI:localuser:$(id -un)
+XAUTH=/tmp/.docker.xauth
+touch $XAUTH
+xauth nlist :0 | sed -e 's/^..../ffff/' | xauth -f $XAUTH nmerge - 2>/dev/null
+chmod a+r $XAUTH
+
+docker run -it --rm \
+    --name=ros2_fossbot_edu \
+    --shm-size=1g \
+    --ulimit memlock=-1 \
+    --env="DISPLAY=$DISPLAY" \
+    --env="QT_X11_NO_MITSHM=1" \
+    --env="XAUTHORITY=$XAUTH" \
+    --volume="$XAUTH:$XAUTH" \
+    --volume="/tmp/.X11-unix:/tmp/.X11-unix:rw" \
+    --volume="$(pwd)/ws_fossbot:/fossbot_ros2/ws_fossbot" \
+    --device=/dev/dri:/dev/dri \
+    --device=/dev/video0:/dev/video0 \
+    --group-add video \
+    --group-add $(getent group render | cut -d: -f3) \
+    --gpus 'all,"capabilities=compute,utility,graphics"' \
+    --env="NVIDIA_VISIBLE_DEVICES=all" \
+    --env="NVIDIA_DRIVER_CAPABILITIES=all" \
+    --network=host \
+    --pid=host \
+    --ipc=host \
+    ros2_fossbot_edu \
+    bash
+
+  (If webcam is /dev/video2 instead of /dev/video0, change the --device line
+   above AND edit cv2.VideoCapture(0) to cv2.VideoCapture(2) after cloning.)
+
+
+================================================================================
+PHASE 2: CLONE YOUR REPO, INSTALL MEDIAPIPE & BUILD (~5-10 min)
+================================================================================
+Open a NEW Ubuntu host terminal (TERMINAL 2) and attach to the container:
+
+docker exec -it ros2_fossbot_edu bash
+
+2.1) Clone your package directly into the ROS 2 workspace:
+
+cd /fossbot_ros2/ws_fossbot/src
+git clone https://github.com/igorpput/fossbot_gesture_control.git
+
+2.2) Install MediaPipe and download hand_landmarker.task using your script:
+
+bash /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/container_setup.sh
+
+2.3) Quick sanity check (should print "OK" and show the .task file):
+
+python3 -c "import mediapipe, cv2; print('OK')" && ls -lh ~/hand_landmarker.task
+
+2.4) Build the workspace and source it:
+
+cd /fossbot_ros2/ws_fossbot
+colcon build
+source install/setup.bash
+
+
+================================================================================
+PHASE 3: TEST GESTURES, CHECK /cmd_vel & TAKE SCREENSHOTS (~5-10 min)
+================================================================================
+3.1) In TERMINAL 2, run your gesture node:
+
+ros2 run fossbot_gesture_control gesture_steering
+
+3.2) Open TERMINAL 3 on Ubuntu host to verify /cmd_vel output:
+
+docker exec -it ros2_fossbot_edu bash
+source /fossbot_ros2/ws_fossbot/install/setup.bash
+ros2 topic echo /cmd_vel
+
+3.3) Test all 5 gestures and CAPTURE SCREENSHOTS NOW:
+  * forward : Index finger pointing UP, other 3 folded (linear.x = +0.2)
+  * back    : Open hand, all 4 fingers UP              (linear.x = -0.2)
+  * left    : Fist with thumb sticking LEFT            (angular.z = +0.5)
+  * right   : Fist with thumb sticking RIGHT           (angular.z = -0.5)
+  * stop    : Closed fist / peace sign / no hand       (all zeros)
+
+  REQUIRED EVIDENCE:
+  Take 1 screenshot of the OpenCV preview window (showing red landmark dots +
+  green label) for EACH of the 5 gestures: forward, back, left, right, stop.
+  (Ubuntu shortcut: PrintScreen key -> Screenshot or Screen Record.)
+
+  Press Ctrl+C in TERMINAL 3 when verified.
+
+
+================================================================================
+PHASE 4: DRIVE THE SIMULATED ROBOT (~5 min)
+================================================================================
+4.1) In TERMINAL 1 (inside container), source and launch Gazebo:
+
+cd /fossbot_ros2/ws_fossbot
+source install/setup.bash
+ros2 launch fossbot_educational_description single.launch.py world:=simple_shapes.sdf
+
+4.2) Make sure your node is running in TERMINAL 2:
+
+ros2 run fossbot_gesture_control gesture_steering
+
+4.3) Put Gazebo and the "Gesture steering" window side-by-side:
+  * Steer the robot forward, turn, reverse, and stop (lower your hand).
+  * RECORD A SHORT VIDEO / TAKE SCREENSHOTS showing both the gesture preview
+    window and the simulated FOSSBot moving.
+
+4.4) When done with simulation:
+  * Press Ctrl+C in TERMINAL 2 (stops your node).
+  * Press Ctrl+C in TERMINAL 1 (stops Gazebo).
+  * DO NOT exit the container in Terminal 1!
+
+
+================================================================================
+PHASE 5: DRIVE THE REAL FOSSBOT (~10 min)
+================================================================================
+5.1) Follow the course's "Connecting to real robot" guide on the lab PC
+     (connect to lab Wi-Fi / set ROS_DOMAIN_ID if needed).
+     Do NOT launch the simulator!
+
+5.2) Verify in TERMINAL 2 that you can see the real robot's /cmd_vel:
+
+ros2 topic list
+
+5.3) Clear floor space around the robot, then run your node in TERMINAL 2:
+
+ros2 run fossbot_gesture_control gesture_steering
+
+5.4) Drive a short distance with gestures, then REMOVE YOUR HAND to stop.
+  * Take a photo/video of the real robot responding to gestures (LO3 evidence).
+  * Press Ctrl+C in TERMINAL 2 when done.
+
+
+================================================================================
+PHASE 6: SUBMISSION CHECKLIST & CLEANUP (~2 min)
+================================================================================
+6.1) Verify you have everything needed for submission:
+  [ ] Source code package (already on your GitHub, or zip from host):
+        ~/FOSSBotEduSim/ws_fossbot/src/fossbot_gesture_control/
+  [ ] 5 screenshots of preview window with landmarks:
+        forward, back, left, right, stop
+  [ ] Recording / screenshot of simulated FOSSBot driven by gestures
+  [ ] Photo / video of real FOSSBot driven by gestures
+
+  Optional: Zip the package cleanly for Moodle upload (run on Ubuntu host):
+    cd ~/FOSSBotEduSim/ws_fossbot/src
+    zip -r ~/fossbot_gesture_control.zip fossbot_gesture_control -x "*.git*" "*__pycache__*"
+
+6.2) Clean up on the shared lab PC:
+  * Type "exit" in Terminal 2, Terminal 3, and Terminal 1 (closes container).
+  * On the Ubuntu host terminal, revoke X11 access:
+
+xhost -SI:localuser:$(id -un)
+
+  * After the lab, you can switch your GitHub repo back to Private if you want.
+
+
+================================================================================
+QUICK TROUBLESHOOTING
+================================================================================
+- Left and right feel swapped?
+  Open the file and swap "left" and "right" in classify_gesture:
+    nano /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/fossbot_gesture_control/gesture_steering.py
+  Then rebuild fast:
+    cd /fossbot_ros2/ws_fossbot
+    colcon build --packages-select fossbot_gesture_control
+    source install/setup.bash
+
+- Webcam doesn't open / black window?
+  Run "ls /dev/video*" on the host. If it's /dev/video2, restart docker with
+  --device=/dev/video2:/dev/video2, change cv2.VideoCapture(0) to (2), and
+  rebuild with --packages-select fossbot_gesture_control.
+
+- Thumb left/right not triggering easily?
+  Hold hand slightly closer to camera, or lower 0.1 to 0.07 in "abs(dx) > 0.1",
+  then rebuild with --packages-select fossbot_gesture_control.
+
+
+================================================================================
+CHEAT SHEET FOR SECTION 9 (ANALYSIS QUESTIONS — IF ASKED)
+================================================================================
+Q1: Why is stopping on unrecognized gestures safer than keeping the last command?
+A1: Fail-safe design. If the camera drops frames, lighting changes, or you lower
+    your hand in a panic, repeating the last velocity would cause an uncontrolled
+    crash. Defaulting to a zero Twist guarantees an immediate stop whenever
+    intent is unclear.
+
+Q2: Why publish ~10 Hz even when the gesture doesn't change?
+A2: The robot's controller uses a safety watchdog timeout (Lab 06): if no new
+    /cmd_vel arrives within a short interval, it halts the wheels automatically
+    in case the control node crashed or Wi-Fi dropped. Continuous publishing
+    keeps the robot moving while a gesture is held.
+
+Q3: One situation where classify_gesture misreads the hand, and how to fix it?
+A3: Tilting or rotating the hand sideways/upside-down breaks the simple y-axis
+    check (tip.y < pip.y assumes an upright hand). Fix: compare Euclidean
+    distances from fingertip to wrist (landmark 0) against PIP-to-wrist distance
+    (rotation-invariant), and require 3 consecutive identical frames before
+    changing commands to filter jitter.
+
+Q4: Practical differences between simulator and real robot?
+A4: (Adjust to what you observe!) Typically: slight Wi-Fi latency, real floor
+    friction/wheel slip and motor deadband at low speeds (0.2 m/s), and room
+    lighting causing more landmark jitter than ideal Gazebo physics.

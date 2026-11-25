@@ -1,0 +1,196 @@
+================================================================================
+LAB 08: GESTURE-BASED STEERING — COMPLETE CHANGELOG & FILE MAP
+================================================================================
+Repository : https://github.com/igorpput/fossbot_gesture_control.git
+Commit     : 7ce23e1 (initial commit)
+
+This document lists every file created/modified to make Lab 08 work, where to
+find each file during the lab, and the exact differences from the provided
+Lab 08 skeleton.
+
+
+================================================================================
+1. WHERE TO FIND YOUR FILES
+================================================================================
+Depending on which terminal/machine you are looking at, the same repository
+lives in these locations:
+
+  * On your home WSL2 machine:
+      ~/fossbot_gesture_control/
+
+  * On the Ubuntu lab PC (host filesystem, persisted across container restarts):
+      ~/FOSSBotEduSim/ws_fossbot/src/fossbot_gesture_control/
+
+  * Inside the Docker container ("ros2_fossbot_edu"):
+      /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/
+
+  * Runtime-only files inside the Docker container (NOT in Git; wiped on exit):
+      ~/hand_landmarker.task           (MediaPipe hand landmark model)
+      Python pip package: mediapipe    (brings its own OpenCV & upgraded numpy)
+
+
+================================================================================
+2. COMPLETE FILE-BY-FILE CHANGELOG (IN YOUR GIT REPO)
+================================================================================
+Instead of running "ros2 pkg create" and manually editing files in the lab
+(Lab Steps 3, 4, 5, and 6), all ROS 2 package boilerplate and completed code
+were created ahead of time in the repository below.
+
+--------------------------------------------------------------------------------
+FILE 1: fossbot_gesture_control/gesture_steering.py   [MAIN SOLUTION FILE]
+--------------------------------------------------------------------------------
+Container path:
+  /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/fossbot_gesture_control/gesture_steering.py
+
+Base:
+  Copied from the Step 4 node skeleton in the Lab 08 instructions.
+
+Changes made to the skeleton:
+  [ADDED] Helper function "finger_extended(landmarks, tip, pip)" (Step 5):
+      - Checks if a finger is upright by comparing normalized image Y coords:
+        returns `landmarks[tip].y < landmarks[pip].y` (smaller y = higher up).
+
+  [EDITED] Function "classify_gesture(landmarks)" (Step 5):
+      - Replaced the placeholder `return "stop"` with full gesture logic:
+        1. Evaluates extended state for index, middle, ring, and pinky fingers.
+        2. "forward" : index extended AND middle, ring, pinky folded.
+        3. "back"    : all four fingers (index, middle, ring, pinky) extended.
+        4. "left" / "right" : all four fingers folded AND horizontal distance
+           `dx = landmarks[THUMB_TIP].x - landmarks[INDEX_MCP].x` exceeds 0.1
+           (`dx < 0` -> "left", `dx > 0` -> "right").
+        5. "stop"    : fallback default for any other/unrecognized hand pose.
+
+  [EDITED] Function "gesture_to_twist(gesture)" (Step 6):
+      - Replaced the empty TODO with velocity mapping to geometry_msgs/Twist:
+        * "forward" -> twist.linear.x  = +0.2  (FORWARD_SPEED)
+        * "back"    -> twist.linear.x  = -0.2  (-FORWARD_SPEED)
+        * "left"    -> twist.angular.z = +0.5  (TURN_SPEED)
+        * "right"   -> twist.angular.z = -0.5  (-TURN_SPEED)
+        * "stop"    -> leaves Twist at all zeros (0.0, 0.0).
+
+  [UNCHANGED from skeleton]:
+      - Landmark index constants (THUMB_TIP=4 ... PINKY_TIP=20).
+      - Speed constants (FORWARD_SPEED = 0.2 m/s, TURN_SPEED = 0.5 rad/s).
+      - GestureSteering ROS 2 Node class:
+          * Publishes Twist to `/cmd_vel` at 10 Hz (`create_timer(0.1, ...)`).
+          * Loads `~/hand_landmarker.task` with `num_hands=1`.
+          * Captures webcam with `cv2.VideoCapture(0)` and mirrors horizontally.
+          * Draws red circles on the 21 hand landmarks + green gesture label.
+          * Publishes zero Twist on Ctrl+C exit in `finally:` block.
+
+--------------------------------------------------------------------------------
+FILE 2: package.xml   [ROS 2 PACKAGE MANIFEST — Step 3]
+--------------------------------------------------------------------------------
+Container path:
+  /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/package.xml
+
+What was configured:
+  - Package name: `fossbot_gesture_control` (format 3, `ament_python`).
+  - Added required ROS 2 runtime dependencies above `<export>` (per Step 3):
+      <exec_depend>rclpy</exec_depend>
+      <exec_depend>geometry_msgs</exec_depend>
+  - Note: `mediapipe` and `cv2` are pip packages, so they are intentionally
+    omitted from package.xml.
+
+--------------------------------------------------------------------------------
+FILE 3: setup.py   [PYTHON PACKAGE ENTRY POINT — Step 3]
+--------------------------------------------------------------------------------
+Container path:
+  /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/setup.py
+
+What was configured:
+  - Standard ROS 2 `ament_python` setuptools script.
+  - Registered the executable console script:
+      'gesture_steering = fossbot_gesture_control.gesture_steering:main'
+    This allows running `ros2 run fossbot_gesture_control gesture_steering`.
+  - Installs `resource/fossbot_gesture_control` and `package.xml` into `share/`.
+
+--------------------------------------------------------------------------------
+FILE 4: setup.cfg   [ROS 2 EXECUTABLE INSTALL PATH — Step 3]
+--------------------------------------------------------------------------------
+Container path:
+  /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/setup.cfg
+
+What was configured:
+  - Points `script_dir` and `install_scripts` to `$base/lib/fossbot_gesture_control`
+    so `ros2 run` locates the built executable inside the colcon install tree.
+
+--------------------------------------------------------------------------------
+FILE 5: resource/fossbot_gesture_control   [AMENT INDEX MARKER — Step 3]
+--------------------------------------------------------------------------------
+Container path:
+  /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/resource/fossbot_gesture_control
+
+What was configured:
+  - Empty 0-byte marker file required by ROS 2's `ament_index` to discover
+    the package after `colcon build`.
+
+--------------------------------------------------------------------------------
+FILE 6: fossbot_gesture_control/__init__.py   [PYTHON MODULE MARKER — Step 3]
+--------------------------------------------------------------------------------
+Container path:
+  /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/fossbot_gesture_control/__init__.py
+
+What was configured:
+  - Empty 0-byte file required so Python treats the inner folder as an
+    importable module.
+
+--------------------------------------------------------------------------------
+FILE 7: container_setup.sh   [CUSTOM AUTOMATION SCRIPT — ADDED FOR SPEED]
+--------------------------------------------------------------------------------
+Container path:
+  /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/container_setup.sh
+
+What was configured (not in original lab text; automates Step 1.3 & Step 1.4):
+  - Executable bash script (`chmod +x`, `set -e`) that runs two commands:
+      1. `python3 -m pip install --break-system-packages --ignore-installed mediapipe`
+      2. `wget -O ~/hand_landmarker.task https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`
+
+--------------------------------------------------------------------------------
+FILE 8: fossbot_gesture_control/__pycache__/gesture_steering.cpython-314.pyc
+--------------------------------------------------------------------------------
+Container path:
+  /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/fossbot_gesture_control/__pycache__/
+
+Note:
+  - Auto-generated by running `python3 -m py_compile` on WSL before `git add .`.
+  - Completely harmless: Python inside Docker uses a different Python version
+    and ignores this file. Excluded automatically if you use the `zip` command
+    in lab08_speedrun.txt.
+
+
+================================================================================
+3. ENVIRONMENT / DOCKER CHANGES (MADE ON THE LAB PC AT RUNTIME)
+================================================================================
+Nothing in the existing `FOSSBotEduSim` repo or `ros2_fossbot_edu` Docker image
+was modified. Only the runtime launch flags and container packages differ from
+Labs 05–07:
+
+  1. Webcam passthrough in `docker run` (Step 1.2):
+     - Added `--device=/dev/video0:/dev/video0` (plus `--group-add video`) so
+       the container can read the host webcam. The default `start_container.sh`
+       does not include this flag.
+  2. In-container runtime installs (Step 1.3 & 1.4 via `container_setup.sh`):
+     - Installed `mediapipe` via pip (`--break-system-packages --ignore-installed`).
+     - Downloaded `~/hand_landmarker.task` into the container's home directory.
+  3. Build output (generated in container during Phase 2):
+     - `colcon build` generates `build/`, `install/`, and `log/` folders inside
+       `/fossbot_ros2/ws_fossbot/`.
+
+
+================================================================================
+4. POSSIBLE IN-LAB EDITS (ONLY IF NEEDED TOMORROW)
+================================================================================
+All tweaks, if needed, are inside one file:
+  /fossbot_ros2/ws_fossbot/src/fossbot_gesture_control/fossbot_gesture_control/gesture_steering.py
+
+  * If webcam is not /dev/video0 (e.g., /dev/video2):
+      Change `cv2.VideoCapture(0)` -> `cv2.VideoCapture(2)` (line 72).
+  * If left/right steering feels mirrored:
+      Swap `"left"` and `"right"` in `classify_gesture` (line 45).
+  * If robot moves too fast/slow on real hardware:
+      Adjust `FORWARD_SPEED` (line 17) or `TURN_SPEED` (line 18).
+  * After any edit, always rebuild + source:
+      cd /fossbot_ros2/ws_fossbot
+      colcon build --packages-select fossbot_gesture_control
+      source install/setup.bash
